@@ -1,0 +1,77 @@
+# 1. Load required libraries
+library(jmvReadWrite)
+library(caret)
+library(glmnet)
+
+# 2. Load the dataset
+df <- read_omv("C:/Users/coremam/Documents/Personal/FYP_Cleaned_Data.omv")
+
+# 3. Define the precise variable names including the newly added predictors
+predictor_names <- c("Age", "CRH-Mean", "Freq_Mean", "Int_Mean", "Lit_Mean")
+dv_names <- c("Lexical_Convergence_Score", "Burstiness_SD", "Function_Word_Freq")
+
+# 4. Clean the data strictly for the variables in use
+df_clean <- na.omit(df[, c(predictor_names, dv_names)])
+
+# 5. Prepare the standardized predictor matrix (x)
+x <- as.matrix(df_clean[, predictor_names])
+
+# 6. Establish the LOOCV training protocol and hyperparameter tuning grid
+train_control <- trainControl(method = "LOOCV")
+tune_grid <- expand.grid(
+  alpha = seq(0, 1, by = 0.1),
+  lambda = 10^seq(-3, 3, length = 100)
+)
+
+# 7. Configure the plotting environment to display 3 rows and 2 columns of plots
+par(mfrow = c(3, 2))
+
+# 8. Execute the regression and assumption checks iteratively for each DV
+for (dv in dv_names) {
+  
+  # Isolate the current outcome vector
+  y <- df_clean[[dv]]
+  
+  # Train the model with standardization
+  set.seed(123)
+  model <- train(
+    x = x,
+    y = y,
+    method = "glmnet",
+    preProcess = c("center", "scale"),
+    tuneGrid = tune_grid,
+    trControl = train_control
+  )
+  
+  # Output textual results to the console
+  cat("\n======================================================\n")
+  cat("Results for Dependent Variable:", dv, "\n")
+  cat("======================================================\n")
+  cat("Optimal Tuning Parameters:\n")
+  print(model$bestTune)
+  cat("\nFinal Penalized Coefficients:\n")
+  print(coef(model$finalModel, model$bestTune$lambda))
+  
+  # Generate predictions and calculate residuals for assumption testing
+  predictions <- predict(model, newdata = x)
+  residuals <- y - predictions
+  
+  # Diagnostic Plot 1: Linearity and Homoscedasticity
+  plot(predictions, residuals,
+       main = paste("Residuals vs Predicted\n(", dv, ")", sep=""),
+       xlab = "Predicted Values",
+       ylab = "Residuals",
+       pch = 16, col = "darkblue",
+       cex.main = 0.9)
+  abline(h = 0, col = "red", lwd = 2)
+  
+  # Diagnostic Plot 2: Normality of Residuals
+  qqnorm(residuals, 
+         main = paste("Normal Q-Q Plot\n(", dv, ")", sep=""), 
+         pch = 16, col = "darkblue",
+         cex.main = 0.9)
+  qqline(residuals, col = "red", lwd = 2)
+}
+
+# 9. Reset the plotting environment to default
+par(mfrow = c(1, 1))
