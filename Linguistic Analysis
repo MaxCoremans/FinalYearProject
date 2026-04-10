@@ -1,0 +1,73 @@
+# 1. Install and load the necessary language models
+!python -m spacy download en_core_web_sm
+import pandas as pd
+import spacy
+import numpy as np
+
+nlp = spacy.load("en_core_web_sm")
+
+# 2. Define target dictionaries
+ai_functional_words = [
+    "significant", "crucial", "effectively", "additionally", "comprehensive",
+    "enhance", "capabilities", "valuable", "fundamental", "potential",
+    "primarily", "insight", "accurately", "methodically", "notably",
+    "particularly", "predominantly", "profoundly", "promptly", "seamlessly",
+    "strategically", "subsequently", "thereby", "thoroughly", "ultimately",
+    "undoubtedly", "facilitate", "integrate", "leverage", "utilization"
+]
+
+academic_control_words = [
+    "analysis", "approach", "area", "assessment", "concept",
+    "context", "data", "environment", "evidence", "factors",
+    "interpretation", "method", "principle", "procedure", "process",
+    "research", "response", "structure", "theory", "variables",
+    "assume", "derive", "establish", "indicate", "occur",
+    "require", "consist", "consistent", "individual", "relevant"
+]
+
+# Programmatically lemmatise the dictionaries
+ai_lemmas = set([token.lemma_.lower() for doc in nlp.pipe(ai_functional_words) for token in doc])
+control_lemmas = set([token.lemma_.lower() for doc in nlp.pipe(academic_control_words) for token in doc])
+
+# 3. Define the linguistic analysis function
+def analyze_text(text):
+    if not isinstance(text, str) or text.strip() == "":
+        return pd.Series([np.nan, np.nan, np.nan, np.nan])
+
+    doc = nlp(text)
+    valid_tokens = [token for token in doc if token.is_alpha]
+    total_words = len(valid_tokens)
+
+    if total_words == 0:
+        return pd.Series([np.nan, np.nan, np.nan, np.nan])
+
+    # --- Separated Lexical Proportions ---
+    ai_count = sum(1 for token in valid_tokens if token.lemma_.lower() in ai_lemmas)
+    control_count = sum(1 for token in valid_tokens if token.lemma_.lower() in control_lemmas)
+
+    ai_proportion = ai_count / total_words
+    control_proportion = control_count / total_words
+
+    # --- Burstiness (SD of Sentence Length) ---
+    sentence_lengths = [len([t for t in sent if t.is_alpha]) for sent in doc.sents]
+    burstiness_sd = np.std(sentence_lengths) if len(sentence_lengths) > 1 else 0.0
+
+    # --- Function Word Frequency ---
+    function_pos_tags = {"ADP", "DET", "CCONJ", "SCONJ", "PRON"}
+    function_word_count = sum(1 for token in valid_tokens if token.pos_ in function_pos_tags)
+    function_word_freq = function_word_count / total_words
+
+    return pd.Series([ai_proportion, control_proportion, burstiness_sd, function_word_freq])
+
+# 4. Execute Analysis Pipeline
+print("Loading data...")
+# Updated to match your exact file name (case-sensitive)
+df = pd.read_csv("Essays.csv")
+
+print("Analysing linguistic features. This may take a moment...")
+# Outputs the 4 distinct columns
+df[['AI_Marker_Prop', 'Control_Word_Prop', 'Burstiness_SD', 'Function_Word_Freq']] = df['Essay_Text'].apply(analyze_text)
+
+print("Saving final output...")
+df.to_csv("jamovi_ready_data_split.csv", index=False)
+print("Analysis complete! Check the files panel to download 'jamovi_ready_data_split.csv'.")
